@@ -68,13 +68,38 @@ async def browser_close() -> str:
 
 # Register extraction tools
 @mcp.tool()
-async def get_content(format: str = "markdown") -> str:
+async def get_content(
+    format: str = "markdown",
+    selector: str = None,
+    wait_for_content: bool = True,
+    wait_timeout: int = 5000,
+    scroll_to_load: bool = False,
+    include_metadata: bool = False,
+) -> str:
     """Extract FULL content from the current page. Returns original content without truncation.
-    
+
+    Uses a multi-strategy approach for robust extraction:
+    1. Waits for dynamic content to finish loading (SPAs, lazy content)
+    2. Optionally scrolls to trigger lazy-loaded content
+    3. Runs JS-based Readability extraction (captures JS-rendered content)
+    4. Runs server-side BeautifulSoup extraction (fallback)
+    5. Picks the best result automatically
+
     Args:
         format: Output format - text, markdown, or html
+        selector: CSS selector to extract from a specific element (optional).
+                  If omitted, auto-detects main content area.
+        wait_for_content: Wait for dynamic content to render before extraction
+        wait_timeout: Max time in ms to wait for content readiness (default 5000)
+        scroll_to_load: Scroll page to trigger lazy-loaded content before extraction
+        include_metadata: Include page metadata (author, date, description) in response
     """
-    return await extraction.get_content({"format": format})
+    args = {"format": format, "wait_for_content": wait_for_content,
+            "wait_timeout": wait_timeout, "scroll_to_load": scroll_to_load,
+            "include_metadata": include_metadata}
+    if selector is not None:
+        args["selector"] = selector
+    return await extraction.get_content(args)
 
 
 @mcp.tool()

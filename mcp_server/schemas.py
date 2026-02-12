@@ -34,6 +34,27 @@ class GetContentInput(BaseModel):
         default="markdown",
         description="Output format for page content"
     )
+    selector: Optional[str] = Field(
+        default=None,
+        description="CSS selector to extract content from a specific element. "
+        "If not provided, auto-detects the main content area."
+    )
+    wait_for_content: bool = Field(
+        default=True,
+        description="Wait for dynamic content to finish loading before extraction"
+    )
+    wait_timeout: int = Field(
+        default=5000,
+        description="Maximum time (ms) to wait for content to be ready"
+    )
+    scroll_to_load: bool = Field(
+        default=False,
+        description="Scroll down the page to trigger lazy-loaded content before extraction"
+    )
+    include_metadata: bool = Field(
+        default=False,
+        description="Include page metadata (author, date, description, etc.) in the response"
+    )
 
 
 class ExtractTableInput(BaseModel):
