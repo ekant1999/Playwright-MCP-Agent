@@ -112,11 +112,21 @@ async def execute_script(script: str) -> str:
 # Register search tools
 @mcp.tool()
 async def search_web(query: str, engine: str = "google", max_results: int = 10) -> str:
-    """Search the web and return FULL results (titles, URLs, snippets).
-    
+    """Search the web and return results (titles, URLs, snippets).
+
+    Uses a multi-strategy approach for reliability:
+    1. DuckDuckGo HTML-lite via httpx (fastest, no browser needed)
+    2. Browser-based search with automatic engine fallback
+
+    The browser does NOT need to be launched first -- the httpx path
+    works without a browser.  If the browser IS launched, it will be
+    used as a fallback for richer results.
+
     Args:
         query: Search query
-        engine: Search engine to use (google, bing, duckduckgo)
+        engine: Preferred search engine (google, bing, duckduckgo).
+                The engine preference affects fallback order only;
+                the primary path always uses DuckDuckGo lite.
         max_results: Maximum number of results to return
     """
     return await search.search_web({

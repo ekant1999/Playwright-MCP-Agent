@@ -3,7 +3,43 @@
 import os
 from pathlib import Path
 from typing import Optional
-from playwright.async_api import async_playwright, Browser, Page, Playwright
+from playwright.async_api import async_playwright, Browser, BrowserContext, Page, Playwright
+
+
+# Realistic Chrome user-agent (kept current)
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/122.0.0.0 Safari/537.36"
+)
+
+# JavaScript to mask Playwright/automation fingerprints
+_STEALTH_JS = """
+() => {
+    // Remove webdriver flag
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+
+    // Realistic plugins array
+    Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5],
+    });
+
+    // Realistic languages
+    Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en'],
+    });
+
+    // Hide automation-related Chrome properties
+    window.chrome = { runtime: {} };
+
+    // Patch permissions query
+    const originalQuery = window.navigator.permissions.query;
+    window.navigator.permissions.query = (parameters) =>
+        parameters.name === 'notifications'
+            ? Promise.resolve({ state: Notification.permission })
+            : originalQuery(parameters);
+}
+"""
 
 
 def _find_chromium_executable() -> Optional[str]:
@@ -31,6 +67,7 @@ class BrowserManager:
     _instance: Optional['BrowserManager'] = None
     _playwright: Optional[Playwright] = None
     _browser: Optional[Browser] = None
+    _context: Optional[BrowserContext] = None
     _page: Optional[Page] = None
     _headless: bool = False
     _viewport_width: int = 1920
@@ -72,7 +109,12 @@ class BrowserManager:
         # Prefer explicit executable when set (e.g. project .playwright-browsers)
         launch_options = {
             "headless": headless,
-            "args": ['--no-sandbox', '--disable-setuid-sandbox']
+            "args": [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-infobars',
+            ]
         }
         executable = _find_chromium_executable()
         if executable:
@@ -81,12 +123,19 @@ class BrowserManager:
         # Launch Chromium
         self._browser = await self._playwright.chromium.launch(**launch_options)
         
-        # Create context and page
-        context = await self._browser.new_context(
+        # Create context with realistic fingerprint
+        self._context = await self._browser.new_context(
             viewport={'width': viewport_width, 'height': viewport_height},
-            user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+            user_agent=DEFAULT_USER_AGENT,
+            locale='en-US',
+            timezone_id='America/New_York',
+            java_script_enabled=True,
         )
-        self._page = await context.new_page()
+        
+        # Inject stealth script into every new page automatically
+        await self._context.add_init_script(_STEALTH_JS)
+        
+        self._page = await self._context.new_page()
         
         return {
             "status": "launched",
