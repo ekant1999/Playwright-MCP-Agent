@@ -16,10 +16,20 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3001;
+const ALLOWED_ORIGINS = new Set([
+  'http://localhost:5173',
+  'http://127.0.0.1:5173'
+]);
 
 // Middleware
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: (origin, callback) => {
+    // Allow non-browser requests (no Origin header) and local UI origins.
+    if (!origin || ALLOWED_ORIGINS.has(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
   credentials: true
 }));
 app.use(express.json({ limit: '50mb' }));

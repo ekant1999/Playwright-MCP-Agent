@@ -51,13 +51,24 @@ fi
 
 # Check Python
 echo -n "Checking Python 3.11+... "
-if ! command -v python3 &> /dev/null; then
+PYTHON_CMD=""
+for candidate in python3.12 python3.11 python3; do
+    if command -v "$candidate" &> /dev/null; then
+        if "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' &> /dev/null; then
+            PYTHON_CMD="$candidate"
+            break
+        fi
+    fi
+done
+
+if [ -z "$PYTHON_CMD" ]; then
     echo -e "${RED}✗${NC}"
-    echo "Python 3 is required. Please install Python 3.11 or higher."
+    echo "Python 3.11+ is required. Please install Python 3.11 or higher."
     exit 1
 fi
-PYTHON_VERSION=$(python3 --version | cut -d' ' -f2)
-echo -e "${GREEN}✓${NC} (v$PYTHON_VERSION)"
+
+PYTHON_VERSION=$($PYTHON_CMD --version | cut -d' ' -f2)
+echo -e "${GREEN}✓${NC} (v$PYTHON_VERSION via $PYTHON_CMD)"
 
 # Check Node.js
 echo -n "Checking Node.js... "
@@ -75,33 +86,62 @@ echo "Installing Dependencies"
 echo "=================================="
 echo ""
 
+SETUP_MARKER=".setup_complete"
+
 # Install Python dependencies
+if [ -d "venv" ]; then
+    if [ ! -x "venv/bin/python" ] || ! venv/bin/python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' &> /dev/null; then
+        echo "Existing virtual environment is incompatible. Recreating with $PYTHON_CMD..."
+        rm -rf venv
+        rm -f "$SETUP_MARKER"
+    fi
+fi
+
 if [ ! -d "venv" ]; then
-    echo "Creating Python virtual environment..."
-    python3 -m venv venv
+    echo "Creating Python virtual environment with $PYTHON_CMD..."
+    "$PYTHON_CMD" -m venv venv
 fi
 
 echo "Activating virtual environment..."
 source venv/bin/activate
 
-echo "Installing Python packages..."
-pip install -q -r requirements.txt
+# Check if dependencies are installed
+if [ -f "$SETUP_MARKER" ] && [ requirements.txt -nt "$SETUP_MARKER" ]; then
+    echo "requirements.txt changed since last setup. Reinstalling dependencies..."
+    rm -f "$SETUP_MARKER"
+fi
 
-echo "Installing Playwright browsers..."
-playwright install chromium
-
-# Install Node dependencies
-echo ""
-echo "Installing Bridge Server dependencies..."
-cd bridge_server
-npm install --silent
-cd ..
-
-echo ""
-echo "Installing UI dependencies..."
-cd ui
-npm install --silent
-cd ..
+if [ ! -f "$SETUP_MARKER" ]; then
+    echo "First-time setup detected. Installing dependencies..."
+    
+    echo "Installing Python packages..."
+    pip install -q -r requirements.txt
+    
+    echo "Installing Playwright browsers..."
+    export PLAYWRIGHT_BROWSERS_PATH="$(pwd)/.playwright-browsers"
+    playwright install chromium
+    
+    # Install Node dependencies
+    echo ""
+    echo "Installing Bridge Server dependencies..."
+    cd bridge_server
+    npm install --silent
+    cd ..
+    
+    echo ""
+    echo "Installing UI dependencies..."
+    cd ui
+    npm install --silent
+    cd ..
+    
+    # Mark setup as complete
+    touch "$SETUP_MARKER"
+    echo "✓ Setup complete! Next run will be faster."
+else
+    echo "Dependencies already installed. Skipping installation..."
+    echo "(To reinstall, delete .setup_complete file)"
+    export PLAYWRIGHT_BROWSERS_PATH="$(pwd)/.playwright-browsers"
+fi
 
 echo ""
 echo -e "${GREEN}✓ Setup complete!${NC}"

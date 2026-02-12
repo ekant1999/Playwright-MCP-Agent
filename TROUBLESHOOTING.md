@@ -140,7 +140,7 @@ npm start
 ```bash
 source venv/bin/activate
 pip uninstall fastmcp
-pip install fastmcp==0.2.0
+pip install "fastmcp>=2.2.0,<3.0.0"
 ```
 
 **Test MCP server directly:**

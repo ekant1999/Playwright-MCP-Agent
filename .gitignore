@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
+.venv*/
 venv/
 env/
 ENV/
@@ -48,3 +49,6 @@ ui/build/
 
 # Playwright browsers (install with: PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers playwright install chromium)
 .playwright-browsers/
+
+# Setup marker
+.setup_complete

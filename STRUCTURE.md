@@ -252,11 +252,11 @@ UI displays in Chat with markdown
 
 ### Python (requirements.txt)
 ```
-fastmcp==0.2.0
+fastmcp>=2.2.0,<3.0.0
 playwright==1.48.0
 beautifulsoup4==4.12.3
 lxml==5.1.0
-httpx==0.27.0
+httpx>=0.28.1,<1.0.0
 pydantic>=2.0.0
 arxiv==2.1.0
 ```
