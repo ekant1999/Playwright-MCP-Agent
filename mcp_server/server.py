@@ -90,8 +90,9 @@ async def get_content(
         selector: CSS selector to extract from a specific element (optional).
                   If omitted, auto-detects main content area.
         wait_for_content: Wait for dynamic content to render before extraction
-        wait_timeout: Max time in ms to wait for content readiness (default 5000)
-        scroll_to_load: Scroll page to trigger lazy-loaded content before extraction
+        wait_timeout: Max time in ms to wait for content to stabilize (default 10000).
+                     Increase for slow or JS-heavy sites.
+        scroll_to_load: Force upfront scrolling (auto-scrolls on article pages when needed)
         include_metadata: Include page metadata (author, date, description) in response
     """
     args = {"format": format, "wait_for_content": wait_for_content,

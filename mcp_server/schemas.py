@@ -44,12 +44,15 @@ class GetContentInput(BaseModel):
         description="Wait for dynamic content to finish loading before extraction"
     )
     wait_timeout: int = Field(
-        default=5000,
-        description="Maximum time (ms) to wait for content to be ready"
+        default=10000,
+        description="Maximum time (ms) to wait for content to stabilize. "
+        "Increase for slow or JS-heavy sites (Next.js, React SPAs)."
     )
     scroll_to_load: bool = Field(
         default=False,
-        description="Scroll down the page to trigger lazy-loaded content before extraction"
+        description="Force upfront scrolling before extraction. Usually NOT needed — "
+        "the extractor automatically scrolls when it detects incomplete content "
+        "on article pages. Set True to force scrolling on non-article pages."
     )
     include_metadata: bool = Field(
         default=False,
