@@ -262,9 +262,13 @@ async def ieee_download_pdf(arguments: dict) -> str:
         filename = f"ieee_{paper_id}.pdf"
         file_info = file_manager.save_file(pdf_content, filename)
         
+        saved_path = file_info["path"]
         result = {
-            "status": "success",
-            "message": "PDF downloaded successfully",
+            "status": "downloaded",
+            "path": saved_path,
+            "file_path": saved_path,  # Same as path; use this to open/locate the file
+            "message": f"Downloaded PDF successfully. Saved to download folder: {saved_path}",
+            "download_folder": str(file_manager.base_dir.absolute()),
             "url": input_data.url,
             "pdf_url": pdf_url,
             **file_info
