@@ -27,10 +27,12 @@ _POSITIVE_PATTERNS = re.compile(
 )
 
 # Negative indicators — elements/classes likely to be boilerplate
+# Note: Use word-boundary \b for short/ambiguous terms like "nav", "meta"
+# to avoid false positives (e.g. "navigate" matching "nav", "metadata" matching "meta").
 _NEGATIVE_PATTERNS = re.compile(
-    r"combx|comment|com-|contact|foot|footer|footnote|masthead|media|meta|"
-    r"outbrain|promo|related|scroll|shoutbox|sidebar|sponsor|shopping|"
-    r"tags|tool|widget|nav|menu|breadcrumb|crumb|pagination|pager|"
+    r"combx|comment|contact|foot|footer|footnote|masthead|"
+    r"outbrain|promo|related|shoutbox|sidebar|sponsor|shopping|"
+    r"\bnav\b|\bmenu\b|breadcrumb|crumb|pagination|pager|"
     r"popup|modal|overlay|cookie|consent|newsletter|subscribe|signup",
     re.IGNORECASE,
 )
@@ -38,8 +40,9 @@ _NEGATIVE_PATTERNS = re.compile(
 # Elements whose content is boilerplate (always remove)
 _BOILERPLATE_TAGS = {"script", "style", "noscript", "iframe", "svg", "form"}
 
-# Structural elements to remove if they match negative patterns
-_STRUCTURAL_NOISE_TAGS = {"header", "footer", "nav", "aside"}
+# Structural elements to remove — footer/nav/aside always,
+# header only at page level (not inside article/main).
+_STRUCTURAL_NOISE_TAGS = {"footer", "nav", "aside"}
 
 # Ad/tracking patterns — matched as whole words to avoid false positives
 # e.g. "ad" won't match "loading" or "heading"
@@ -120,10 +123,14 @@ def _calculate_content_density(tag: Tag) -> float:
 
 
 def _count_paragraphs(tag: Tag) -> int:
-    """Count meaningful paragraphs (> minimum length) inside a tag."""
+    """Count meaningful text blocks (> minimum length) inside a tag.
+    
+    Counts not just <p> but also <li>, <td>, <th>, <dd>, <dt>, <blockquote>
+    to properly score data-heavy pages (weather, product, forum).
+    """
     count = 0
-    for p in tag.find_all("p"):
-        if len(p.get_text(strip=True)) >= _MIN_PARAGRAPH_LENGTH:
+    for el in tag.find_all(["p", "li", "td", "th", "dd", "dt", "blockquote"]):
+        if len(el.get_text(strip=True)) >= _MIN_PARAGRAPH_LENGTH:
             count += 1
     return count
 
@@ -166,6 +173,44 @@ def _score_candidate(tag: Tag) -> float:
     return base_score
 
 
+def _expand_candidate(tag: Tag) -> Tag:
+    """Expand a candidate upward if a parent captures more article content.
+    
+    Handles the pattern where ads are injected between article sections,
+    splitting content across sibling containers.  Walking up to the common
+    ancestor recombines all sections (ads are already removed by _clean_soup).
+    """
+    best = tag
+    best_paras = _count_paragraphs(tag)
+    best_text_len = len(tag.get_text(strip=True))
+    
+    current = tag
+    for _ in range(3):
+        parent = current.parent
+        if not parent or parent.name in (None, "body", "html", "[document]"):
+            break
+        
+        parent_paras = _count_paragraphs(parent)
+        parent_text_len = len(parent.get_text(strip=True))
+        parent_link_ratio = _count_links_ratio(parent)
+        parent_class_id = _get_class_id_string(parent)
+        
+        # Stop if parent is clearly noise. Allow moderate link ratio (0.55)
+        # so we can expand to a wrapper that includes article + ad siblings (e.g. MSN).
+        if _NEGATIVE_PATTERNS.search(parent_class_id) or parent_link_ratio > 0.55:
+            break
+        
+        # Expand if parent has significantly more paragraphs
+        if parent_paras > best_paras * 1.4 and parent_text_len > best_text_len * 1.2:
+            best = parent
+            best_paras = parent_paras
+            best_text_len = parent_text_len
+        
+        current = parent
+    
+    return best
+
+
 # ---------------------------------------------------------------------------
 # Noise removal
 # ---------------------------------------------------------------------------
@@ -181,9 +226,19 @@ def _is_noise_element(tag: Tag) -> bool:
     if tag.name in _BOILERPLATE_TAGS:
         return True
     
-    # Remove structural noise tags (header/footer/nav/aside)
+    # Remove structural noise tags (footer/nav/aside)
     if tag.name in _STRUCTURAL_NOISE_TAGS:
         return True
+    
+    # Remove <header> only if it's NOT inside article/main content
+    # (article headers contain title, author, date — keep those)
+    if tag.name == "header":
+        parent = tag.parent
+        while parent:
+            if parent.name in ("article", "main"):
+                return False  # Keep header inside article/main
+            parent = parent.parent
+        return True  # Remove page-level headers
     
     # Remove elements matching ad word patterns (whole-word matching)
     if class_id and _AD_WORD_PATTERNS.search(class_id):
@@ -196,14 +251,21 @@ def _is_noise_element(tag: Tag) -> bool:
         if density < 0.3:
             return True
     
-    # Remove hidden elements
+    # Remove hidden elements — BUT preserve content-heavy ones.
+    # "Read More" collapses, expandable sections, and accordion content
+    # are often hidden via display:none but contain the FULL article text.
+    # Only remove hidden elements with very little text (<80 chars).
     style = tag.get("style", "")
     if "display:none" in style.replace(" ", "") or "visibility:hidden" in style.replace(" ", ""):
-        return True
+        text_len = len(tag.get_text(strip=True))
+        if text_len <= 80:
+            return True
     
-    # Remove aria-hidden elements
+    # Remove aria-hidden elements (same text-length guard)
     if tag.get("aria-hidden") == "true":
-        return True
+        text_len = len(tag.get_text(strip=True))
+        if text_len <= 80:
+            return True
     
     return False
 
@@ -239,9 +301,11 @@ def extract_main_content(html: str) -> str:
     
     Strategy:
     1. Parse HTML and remove obvious noise
-    2. Score candidate containers (article, main, section, div)
-    3. Pick the highest-scoring candidate
-    4. Fall back to <body> if no good candidate found
+    2. Find semantic landmark candidate (article, main, [role=main], etc.)
+    3. ALWAYS run scoring on all containers
+    4. Compare semantic vs scored — pick whichever has MORE content
+       (prevents returning a summary section when full article exists)
+    5. Fall back to <body> if no good candidate found
     
     Returns the inner HTML of the best content container.
     """
@@ -250,36 +314,93 @@ def extract_main_content(html: str) -> str:
     # Clean noise from the entire document
     soup = _clean_soup(soup)
     
-    # --- Direct semantic match (highest priority) ---
-    # Check for explicit main content landmarks first
+    # --- Semantic landmark candidate ---
+    semantic_candidate = None
     for finder in [
-        lambda: soup.find("main"),
-        lambda: soup.find(attrs={"role": "main"}),
-        lambda: soup.find("article"),
         lambda: soup.find(attrs={"itemprop": "articleBody"}),
+        lambda: soup.find("article"),
+        lambda: soup.find(attrs={"role": "main"}),
+        lambda: soup.find("main"),
     ]:
         candidate = finder()
         if candidate and len(candidate.get_text(strip=True)) >= _MIN_CONTENT_LENGTH:
-            return str(candidate)
+            semantic_candidate = candidate
+            break
     
-    # --- Scoring-based detection ---
-    # Collect all plausible container elements
-    candidates: list[tuple[float, Tag]] = []
+    semantic_text_len = len(semantic_candidate.get_text(strip=True)) if semantic_candidate else 0
+    
+    # --- Scoring-based detection (always runs) ---
+    scored_candidates: list[tuple[float, Tag]] = []
     for tag in soup.find_all(["div", "section", "td", "article", "main", "blockquote"]):
         text_length = len(tag.get_text(strip=True))
         if text_length < _MIN_CONTENT_LENGTH:
             continue
         score = _score_candidate(tag)
-        candidates.append((score, tag))
+        scored_candidates.append((score, tag))
     
-    if candidates:
-        # Sort by score descending
-        candidates.sort(key=lambda x: x[0], reverse=True)
-        best_score, best_tag = candidates[0]
-        
-        # Only accept if score is reasonable
+    scored_best = None
+    scored_text_len = 0
+    if scored_candidates:
+        scored_candidates.sort(key=lambda x: x[0], reverse=True)
+        best_score, best_tag = scored_candidates[0]
         if best_score > 0:
+            scored_best = best_tag
+            scored_text_len = len(best_tag.get_text(strip=True))
+    
+    # --- Ancestor expansion ---
+    # Walk up from each candidate to catch articles split by ads across
+    # sibling containers (e.g., MSN injects ads between article sections).
+    if semantic_candidate:
+        expanded = _expand_candidate(semantic_candidate)
+        if expanded is not semantic_candidate:
+            semantic_candidate = expanded
+            semantic_text_len = len(semantic_candidate.get_text(strip=True))
+    
+    if scored_best:
+        expanded = _expand_candidate(scored_best)
+        if expanded is not scored_best:
+            scored_best = expanded
+            scored_text_len = len(scored_best.get_text(strip=True))
+    
+    # --- Compare and pick the best ---
+    # Prefer the candidate with the MOST content when any has >= 800 chars,
+    # so we don't return a short summary box instead of the full article
+    # (e.g. Summary/Details/Conclusion on Cybernews).
+    _MIN_ARTICLE_LEN = 800
+
+    pool: list[tuple[Tag, int]] = []
+    seen_ids: set[int] = set()
+    if semantic_candidate and semantic_text_len >= 100:
+        pool.append((semantic_candidate, semantic_text_len))
+        seen_ids.add(id(semantic_candidate))
+    for score, tag in (scored_candidates or [])[:5]:
+        if score <= 0:
+            continue
+        expanded = _expand_candidate(tag)
+        if id(expanded) in seen_ids:
+            continue
+        seen_ids.add(id(expanded))
+        length = len(expanded.get_text(strip=True))
+        if length >= 100 and _count_links_ratio(expanded) <= 0.55:
+            pool.append((expanded, length))
+
+    if pool:
+        best_tag, best_len = max(pool, key=lambda x: x[1])
+        if best_len >= _MIN_ARTICLE_LEN:
             return str(best_tag)
+
+    # Original logic when no long candidate
+    if scored_best and scored_text_len > semantic_text_len * 1.3 and scored_text_len >= 200:
+        return str(scored_best)
+
+    if semantic_candidate and semantic_text_len >= 200:
+        return str(semantic_candidate)
+
+    if scored_best and scored_text_len >= semantic_text_len and scored_text_len >= _MIN_CONTENT_LENGTH:
+        return str(scored_best)
+
+    if semantic_candidate and semantic_text_len >= _MIN_CONTENT_LENGTH:
+        return str(semantic_candidate)
     
     # --- Fallback: return cleaned body ---
     body = soup.find("body")
