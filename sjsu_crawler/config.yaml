@@ -1,7 +1,18 @@
 start_url: "https://library.sjsu.edu/govpubs"
 scope_prefix: "https://library.sjsu.edu"
-max_depth: 10
-max_pages: 15
-polite_delay_ms: 100
+max_depth: -1
+max_pages: -1
+polite_delay_ms: 1000
 headless: false
-output_json: "output/research_guides.json"
+output_json: "output/research_guides_v1.json"
+
+# Skip enqueueing links whose URL contains any of these (e.g. download/redirect scripts)
+skip_url_contains:
+  - "ld.php"
+
+# Set true to allow pages with SSL cert errors (e.g. ERR_CERT_COMMON_NAME_INVALID)
+ignore_https_errors: false
+
+postgres:
+  enabled: true
+  url: "postgresql://user:pass@localhost:5432/crawldb"

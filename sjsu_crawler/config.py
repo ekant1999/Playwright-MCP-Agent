@@ -7,6 +7,12 @@ import yaml
 
 
 @dataclass(frozen=True)
+class PostgresConfig:
+    enabled: bool
+    url: str
+
+
+@dataclass(frozen=True)
 class Config:
     start_url: str
     scope_prefix: str
@@ -15,6 +21,9 @@ class Config:
     polite_delay_ms: int
     headless: bool
     output_json: str
+    postgres: PostgresConfig
+    skip_url_contains: tuple[str, ...]
+    ignore_https_errors: bool
 
 
 def load_config(path: str) -> Config:
@@ -45,13 +54,33 @@ def load_config(path: str) -> Config:
         raise ValueError(f"scope_prefix must begin with http, got: {scope_prefix}")
     if max_depth < -1:
         raise ValueError(f"max_depth must be >= -1, got {max_depth}")
-    if max_pages < 1:
-        raise ValueError(f"max_pages must be >= 1, got {max_pages}")
+    if max_pages < -1 or max_pages == 0:
+        raise ValueError(f"max_pages must be >= 1 or -1 (no limit), got {max_pages}")
     if polite_delay_ms < 0:
         raise ValueError(f"polite_delay_ms must be >= 0, got {polite_delay_ms}")
 
     out_dir = pathlib.Path(output_json).parent
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    postgres_enabled = False
+    postgres_url = ""
+    if "postgres" in data:
+        pg = data["postgres"]
+        if isinstance(pg, dict):
+            postgres_enabled = bool(pg.get("enabled", False))
+            postgres_url = str(pg.get("url", ""))
+            if postgres_enabled and postgres_url and not postgres_url.startswith("postgresql"):
+                raise ValueError("postgres.url must start with postgresql:// when provided")
+    postgres = PostgresConfig(enabled=postgres_enabled, url=postgres_url)
+
+    skip_url_contains: tuple[str, ...] = ()
+    if "skip_url_contains" in data:
+        raw = data["skip_url_contains"]
+        if isinstance(raw, list):
+            skip_url_contains = tuple(str(x) for x in raw)
+        else:
+            skip_url_contains = (str(raw),) if raw else ()
+    ignore_https_errors = bool(data.get("ignore_https_errors", False))
 
     return Config(
         start_url=start_url,
@@ -61,4 +90,7 @@ def load_config(path: str) -> Config:
         polite_delay_ms=polite_delay_ms,
         headless=headless,
         output_json=output_json,
+        postgres=postgres,
+        skip_url_contains=skip_url_contains,
+        ignore_https_errors=ignore_https_errors,
     )
