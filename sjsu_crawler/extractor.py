@@ -74,11 +74,11 @@ def _normalize_whitespace(text: str) -> str:
 
 
 def _main_content_script(field: str) -> str:
-    """JS to resolve main content root (LibGuides center column) or body."""
+    """JS to resolve main content root (LibGuides center column) or body. Never null."""
     return """
     (() => {
-        const main = document.querySelector('#s-lg-content') || document.querySelector('[role="main"]') || document.querySelector('.s-lg-content-col') || document.body;
-        const root = main;
+        const main = document.querySelector('#s-lg-content') || document.querySelector('[role="main"]') || document.querySelector('.s-lg-content-col') || document.body || document.documentElement;
+        const root = main || document.body || document.documentElement;
     """ + field + """
     })();
     """
