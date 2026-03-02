@@ -52,3 +52,10 @@ ui/build/
 
 # Setup marker
 .setup_complete
+
+# Crawler output (guides/search JSON and downloads)
+output/*.json
+output/downloads/
+output/guides_downloads/
+output/search_pdfs/
+!output/.gitkeep
