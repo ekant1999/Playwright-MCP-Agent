@@ -1,10 +1,14 @@
-start_url: "https://library.sjsu.edu/govpubs"
+# Base URLs (optional; defaults shown)
+library_base_url: "https://library.sjsu.edu"
+primo_search_url: "https://csu-sjsu.primo.exlibrisgroup.com/discovery/search?vid=01CALS_SJO:01CALS_SJO&lang=en"
+
+start_url: "https://library.sjsu.edu/research-guides"
 scope_prefix: "https://library.sjsu.edu"
 max_depth: -1
 max_pages: -1
 polite_delay_ms: 1000
 headless: false
-output_json: "output/research_guides_v1.json"
+output_json: "output/crawl_pages.json"
 
 # Skip enqueueing links whose URL contains any of these (e.g. download/redirect scripts)
 skip_url_contains:
@@ -12,6 +16,13 @@ skip_url_contains:
 
 # Set true to allow pages with SSL cert errors (e.g. ERR_CERT_COMMON_NAME_INVALID)
 ignore_https_errors: false
+
+# Optional: SJSU login for downloading full-text from result links (Access to SJSU Resources).
+# Prefer setting password via env: export SJSU_PASSWORD="your_sjsuone_password"
+sjsu_login:
+  enabled: false
+  id: ""
+  password: ""   # or set SJSU_PASSWORD in env
 
 postgres:
   enabled: true
