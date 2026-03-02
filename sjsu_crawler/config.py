@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import pathlib
 from dataclasses import dataclass
 
@@ -13,7 +14,18 @@ class PostgresConfig:
 
 
 @dataclass(frozen=True)
+class SjsuLoginConfig:
+    """Optional SJSU login for downloading full-text (Access to SJSU Resources / Sign In)."""
+    enabled: bool
+    id: str  # SJSU ID Number
+    password: str  # Prefer env SJSU_PASSWORD; can be set in YAML for testing.
+
+
+@dataclass(frozen=True)
 class Config:
+    library_base_url: str
+    primo_search_url: str
+    sjsu_login: SjsuLoginConfig | None
     start_url: str
     scope_prefix: str
     max_depth: int
@@ -81,8 +93,29 @@ def load_config(path: str) -> Config:
         else:
             skip_url_contains = (str(raw),) if raw else ()
     ignore_https_errors = bool(data.get("ignore_https_errors", False))
+    library_base_url = str(data.get("library_base_url", "https://library.sjsu.edu"))
+    primo_search_url = str(data.get("primo_search_url", "https://csu-sjsu.primo.exlibrisgroup.com/discovery/search?vid=01CALS_SJO:01CALS_SJO&lang=en"))
+    if not library_base_url.startswith("http"):
+        raise ValueError(f"library_base_url must begin with http, got: {library_base_url}")
+    if not primo_search_url.startswith("http"):
+        raise ValueError(f"primo_search_url must begin with http, got: {primo_search_url}")
+
+    sjsu_login: SjsuLoginConfig | None = None
+    if "sjsu_login" in data and isinstance(data["sjsu_login"], dict):
+        sl = data["sjsu_login"]
+        if sl.get("enabled"):
+            sid = str(sl.get("id", "")).strip()
+            spw = str(sl.get("password", "")).strip() or os.environ.get("SJSU_PASSWORD", "")
+            if sid and spw:
+                sjsu_login = SjsuLoginConfig(enabled=True, id=sid, password=spw)
+            else:
+                if sid:
+                    raise ValueError("sjsu_login.enabled is true but password missing; set sjsu_login.password or SJSU_PASSWORD env")
 
     return Config(
+        library_base_url=library_base_url,
+        primo_search_url=primo_search_url,
+        sjsu_login=sjsu_login,
         start_url=start_url,
         scope_prefix=scope_prefix,
         max_depth=max_depth,
