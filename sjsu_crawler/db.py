@@ -6,7 +6,7 @@ from pathlib import Path
 
 import asyncpg
 
-from .models import PageRecord
+from .models import GuideRecord, PageRecord, SearchResultRecord
 
 SCHEMA_SQL = (Path(__file__).parent / "schema.sql").read_text(encoding="utf-8")
 
@@ -79,6 +79,80 @@ async def upsert(
         _json_for_jsonb(d.get("tables")),
         _json_for_jsonb(d.get("links_out")),
         _json_for_jsonb(d.get("images")),
+        d.get("status") or None,
+        d.get("error_msg") or None,
+    )
+
+
+async def upsert_guide(conn: asyncpg.Connection, record: GuideRecord) -> None:
+    d = record.to_dict()
+    fetched_at = _parse_crawled_at(d["fetched_at"])
+    await conn.execute(
+        """
+        INSERT INTO research_guides (
+            url, title, query, query_type, fetched_at,
+            full_content, sections, links_out, status, error_msg
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10)
+        ON CONFLICT (url) DO UPDATE SET
+            title = EXCLUDED.title,
+            query = EXCLUDED.query,
+            query_type = EXCLUDED.query_type,
+            fetched_at = EXCLUDED.fetched_at,
+            full_content = EXCLUDED.full_content,
+            sections = EXCLUDED.sections,
+            links_out = EXCLUDED.links_out,
+            status = EXCLUDED.status,
+            error_msg = EXCLUDED.error_msg
+        """,
+        d["url"],
+        d.get("title") or None,
+        d["query"],
+        d["query_type"],
+        fetched_at,
+        d.get("full_content") or None,
+        _json_for_jsonb(d.get("sections")),
+        _json_for_jsonb(d.get("links_out")),
+        d.get("status") or None,
+        d.get("error_msg") or None,
+    )
+
+
+async def upsert_search_result(
+    conn: asyncpg.Connection,
+    record: SearchResultRecord,
+) -> None:
+    d = record.to_dict()
+    fetched_at = _parse_crawled_at(d["fetched_at"]) if d.get("fetched_at") else None
+    await conn.execute(
+        """
+        INSERT INTO library_search_results (
+            url, query, search_type, scope, title, fetched_at,
+            snippet, authors, source, year, download_path, status, error_msg
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13)
+        ON CONFLICT (url, query) DO UPDATE SET
+            search_type = EXCLUDED.search_type,
+            scope = EXCLUDED.scope,
+            title = EXCLUDED.title,
+            fetched_at = EXCLUDED.fetched_at,
+            snippet = EXCLUDED.snippet,
+            authors = EXCLUDED.authors,
+            source = EXCLUDED.source,
+            year = EXCLUDED.year,
+            download_path = EXCLUDED.download_path,
+            status = EXCLUDED.status,
+            error_msg = EXCLUDED.error_msg
+        """,
+        d["url"],
+        d["query"],
+        d.get("search_type") or "OneSearch",
+        d.get("scope") or None,
+        d.get("title") or None,
+        fetched_at,
+        d.get("snippet") or None,
+        _json_for_jsonb(d.get("authors")),
+        d.get("source") or None,
+        d.get("year") or None,
+        d.get("download_path") or None,
         d.get("status") or None,
         d.get("error_msg") or None,
     )
