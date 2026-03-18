@@ -1,4 +1,4 @@
-# Playwright MCP Agent
+<img width="1705" height="627" alt="image" src="https://github.com/user-attachments/assets/76d36bd1-9bce-4893-a78f-62e672491f92" /># Playwright MCP Agent
 
 Scraping and data extraction using **Playwright** (browser automation). Two ways to run: **SJSU Crawler** (CLI) and **MCP Server** (Playwright tools for extraction).
 
@@ -98,3 +98,11 @@ The agent then calls Playwright tools (including extraction) based on natural-la
 - Python 3.11+
 - Playwright + Chromium
 - For SJSU Postgres output: `postgres.enabled: true` and valid `postgres.url` in config; tables created on first run.
+
+- <img width="911" height="207" alt="image" src="https://github.com/user-attachments/assets/3c4eb59a-c3f2-4b99-ad07-dd7f0f7a099e" />
+<img width="929" height="207" alt="image" src="https://github.com/user-attachments/assets/f98da779-78a8-4ed5-981f-94610458f425" />
+<img width="1718" height="509" alt="image" src="https://github.com/user-attachments/assets/d6a51d87-d6b1-4e43-8a8a-a373429f6f6c" />
+<img width="1705" height="627" alt="image" src="https://github.com/user-attachments/assets/7591bf23-30d3-4f8d-bc47-0732d953e6cd" />
+
+
+
