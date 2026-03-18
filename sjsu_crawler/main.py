@@ -120,12 +120,13 @@ async def run_search_cmd(
     no_db: bool,
     advanced: bool,
     material_types: list[str],
+    full_content: bool = False,
 ) -> None:
-    """OneSearch (Primo): search, extract results, optional PDF download. Writes output/search_<query>.json when --no-db or Postgres disabled."""
+    """OneSearch (Primo): search, extract results, optional PDF download and full page content. Writes output/search_<query>.json when --no-db or Postgres disabled."""
     config = load_config(config_path)
     logger.info(
-        "search query=%s search_type=%s scope=%s download_dir=%s no_db=%s advanced=%s material_types=%s",
-        query, search_type, scope, download_dir or "(none)", no_db, advanced, material_types or "none",
+        "search query=%s search_type=%s scope=%s download_dir=%s no_db=%s advanced=%s material_types=%s full_content=%s",
+        query, search_type, scope, download_dir or "(none)", no_db, advanced, material_types or "none", full_content,
     )
     await run_search(
         config,
@@ -136,6 +137,7 @@ async def run_search_cmd(
         no_db=no_db,
         advanced=advanced,
         material_types=material_types or None,
+        full_content=full_content,
     )
 
 
@@ -175,6 +177,7 @@ def main() -> None:
     p_search.add_argument("--no-db", action="store_true", help="Skip Postgres; write output/search_<query>.json")
     p_search.add_argument("--advanced", action="store_true", help="Use Primo advanced search (query + scope + material type)")
     p_search.add_argument("--material-type", dest="material_types", metavar="TYPE", action="append", default=None, help="Material type in advanced search dropdown (e.g. Articles, Book chapters for articles/documents; repeat or comma-separated)")
+    p_search.add_argument("--full-content", action="store_true", help="Visit each result URL and extract full page content (e.g. Primo fulldisplay / catalog record)")
     p_search.set_defaults(
         func=lambda a: asyncio.run(
             run_search_cmd(
@@ -186,6 +189,7 @@ def main() -> None:
                 a.no_db,
                 getattr(a, "advanced", False),
                 _parse_material_types(a.material_types),
+                getattr(a, "full_content", False),
             )
         )
     )

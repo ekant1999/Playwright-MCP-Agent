@@ -14,6 +14,7 @@ from playwright.async_api import async_playwright, Frame, Page
 
 from .config import Config
 from .db import init_schema, upsert_search_result
+from .extractor import extract
 from .models import SearchResultRecord
 from .paths import download_dir_for, get_output_dir, search_json_path
 
@@ -362,6 +363,78 @@ async def _extract_primo_results(page: Page, query: str, search_type: str, scope
             logger.warning("fulldisplay fallback failed: %s", e)
 
     return records
+
+
+# Primo fulldisplay page: wait for and extract main content (SPA; may use shadow DOM)
+PRIMO_FULLVIEW_SELECTORS = [
+    "prm-full-view",
+    "[class*='full-view']",
+    "[class*='fullView']",
+    "prm-full-view-content",
+    "[role='main']",
+]
+
+
+async def _extract_primo_fulldisplay_content(page: Page) -> str:
+    """Extract main text from a Primo fulldisplay (record) page. Handles SPA and shadow DOM."""
+    try:
+        # Wait for Primo to render the full view (SPA)
+        for sel in PRIMO_FULLVIEW_SELECTORS:
+            try:
+                await page.wait_for_selector(sel, timeout=6_000)
+                break
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    def _get_text_script() -> str:
+        return """
+        () => {
+            const sel = ['prm-full-view', '[class*="full-view"]', '[class*="fullView"]', 'prm-full-view-content', '[role="main"]', 'main', 'body'];
+            let root = null;
+            for (const s of sel) {
+                try {
+                    const el = document.querySelector(s);
+                    if (el && (el.innerText || el.textContent)) {
+                        root = el;
+                        break;
+                    }
+                } catch (e) {}
+            }
+            root = root || document.body;
+            function textFrom(el) {
+                if (!el) return '';
+                let out = '';
+                if (el.shadowRoot) {
+                    out += textFrom(el.shadowRoot);
+                }
+                const walk = (n) => {
+                    if (n.nodeType === Node.TEXT_NODE) {
+                        const t = n.textContent.trim();
+                        if (t) out += t + ' ';
+                    } else if (n.nodeType === Node.ELEMENT_NODE && n.tagName !== 'SCRIPT' && n.tagName !== 'STYLE') {
+                        if (n.shadowRoot) out += textFrom(n.shadowRoot);
+                        for (const c of n.childNodes) walk(c);
+                    }
+                };
+                for (const c of el.childNodes) walk(c);
+                return out || (el.innerText || el.textContent || '');
+            }
+            return textFrom(root).replace(/\\s+/g, ' ').trim();
+        }
+        """
+
+    try:
+        text = await page.evaluate(_get_text_script())
+        return (text or "").strip()[:200_000]
+    except Exception as e:
+        logger.debug("Primo fulldisplay extract script failed: %s", e)
+        try:
+            raw = await page.evaluate("() => document.body.innerText || ''")
+            return re.sub(r"\s+", " ", (raw or "").strip())[:200_000]
+        except Exception:
+            return ""
 
 
 # Primo results pagination: "Next" button / link (various UIs)
@@ -915,6 +988,7 @@ async def run_search(
     no_db: bool = False,
     advanced: bool = False,
     material_types: list[str] | None = None,
+    full_content: bool = False,
 ) -> list[SearchResultRecord]:
     """
     OneSearch (Primo): navigate to Primo, fill "Search anything", submit, extract results.
@@ -1024,6 +1098,36 @@ async def run_search(
             records = await _extract_primo_results(page, query, search_type, scope)
             if records:
                 logger.info("First page: %d results (following links to download documents when --download-dir set)", len(records))
+
+            # Optional: visit each result URL and scrape full page content (Primo fulldisplay / catalog record)
+            if full_content and records:
+                logger.info("Fetching full content for %d results (visiting each link)", len(records))
+                content_page = await context.new_page()
+                for i, rec in enumerate(records):
+                    try:
+                        await content_page.goto(rec.url, wait_until="load", timeout=25_000)
+                        await asyncio.sleep(max(2.0, config.polite_delay_ms / 1000))
+                        try:
+                            await content_page.wait_for_load_state("networkidle", timeout=8_000)
+                        except Exception:
+                            pass
+                        await asyncio.sleep(1)
+                        # Primo fulldisplay is an SPA; use Primo-specific extraction (handles shadow DOM)
+                        full_text = await _extract_primo_fulldisplay_content(content_page)
+                        if full_text:
+                            rec.full_text = full_text
+                        else:
+                            page_record = await extract(content_page, rec.url, None, 0)
+                            rec.full_text = (page_record.full_text or "").strip()
+                            if page_record.title and not rec.title:
+                                rec.title = page_record.title
+                    except Exception as e:
+                        logger.warning("Full content extraction failed for %s: %s", rec.url, e)
+                        rec.status = "error"
+                        rec.error_msg = str(e)[:500]
+                    if (i + 1) % 5 == 0:
+                        await asyncio.sleep(config.polite_delay_ms / 1000)
+                await content_page.close()
 
             if not download_dir:
                 logger.info(

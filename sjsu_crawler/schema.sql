@@ -47,7 +47,21 @@ CREATE TABLE IF NOT EXISTS library_search_results (
     source TEXT,
     year TEXT,
     download_path TEXT,
+    full_text TEXT,
     status TEXT,
     error_msg TEXT
 );
+-- Ensure columns exist (for DBs created with a different schema)
+ALTER TABLE library_search_results ADD COLUMN IF NOT EXISTS query TEXT;
+ALTER TABLE library_search_results ADD COLUMN IF NOT EXISTS search_type TEXT;
+ALTER TABLE library_search_results ADD COLUMN IF NOT EXISTS scope TEXT;
+ALTER TABLE library_search_results ADD COLUMN IF NOT EXISTS fetched_at TIMESTAMPTZ;
+ALTER TABLE library_search_results ADD COLUMN IF NOT EXISTS snippet TEXT;
+ALTER TABLE library_search_results ADD COLUMN IF NOT EXISTS authors JSONB;
+ALTER TABLE library_search_results ADD COLUMN IF NOT EXISTS source TEXT;
+ALTER TABLE library_search_results ADD COLUMN IF NOT EXISTS year TEXT;
+ALTER TABLE library_search_results ADD COLUMN IF NOT EXISTS download_path TEXT;
+ALTER TABLE library_search_results ADD COLUMN IF NOT EXISTS full_text TEXT;
+ALTER TABLE library_search_results ADD COLUMN IF NOT EXISTS status TEXT;
+ALTER TABLE library_search_results ADD COLUMN IF NOT EXISTS error_msg TEXT;
 CREATE INDEX IF NOT EXISTS idx_library_search_query ON library_search_results (query);

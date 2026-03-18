@@ -127,8 +127,8 @@ async def upsert_search_result(
         """
         INSERT INTO library_search_results (
             url, query, search_type, scope, title, fetched_at,
-            snippet, authors, source, year, download_path, status, error_msg
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13)
+            snippet, authors, source, year, download_path, full_text, status, error_msg
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $14)
         ON CONFLICT (url, query) DO UPDATE SET
             search_type = EXCLUDED.search_type,
             scope = EXCLUDED.scope,
@@ -139,6 +139,7 @@ async def upsert_search_result(
             source = EXCLUDED.source,
             year = EXCLUDED.year,
             download_path = EXCLUDED.download_path,
+            full_text = EXCLUDED.full_text,
             status = EXCLUDED.status,
             error_msg = EXCLUDED.error_msg
         """,
@@ -153,6 +154,7 @@ async def upsert_search_result(
         d.get("source") or None,
         d.get("year") or None,
         d.get("download_path") or None,
+        d.get("full_text") or None,
         d.get("status") or None,
         d.get("error_msg") or None,
     )

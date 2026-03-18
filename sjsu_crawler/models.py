@@ -58,6 +58,7 @@ class SearchResultRecord:
     source: str = ""
     year: str = ""
     download_path: str = ""  # local path if PDF/doc was downloaded
+    full_text: str = ""  # full page content when --full-content is used
     status: str = "ok"
     error_msg: str = ""
 
